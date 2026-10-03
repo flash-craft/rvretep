@@ -24,7 +24,7 @@ from bpy_extras import anim_utils
 
 
 # retep was here. probably.
-ADDON_VERSION = (1, 0, 0)
+ADDON_VERSION = (1, 1, 0)
 MIN_BLENDER_VERSION = (4, 2, 0)
 # dev note: retep was here; ship the boring parts too.
 # If you found this comment, congratulations: the debugger side quest worked.
@@ -1958,10 +1958,9 @@ class RVRETEP_PT_panel(bpy.types.Panel):
         else:
             warning_box = layout.box()
             warning_box.alert = True
-            warning_box.label(text="Before starting VR:", icon='INFO')
-            warning_box.label(text="Make sure your headset is fully connected", icon='XRAY')
-            warning_box.label(text="through Meta Quest Link / Air Link.", icon='INFO')
-            warning_box.label(text="Starting while Link is still connecting can make Blender wait.", icon='ERROR')
+            warning_box.label(text="VR LINK CHECK")
+            warning_box.label(text="Quest Link / Air Link must show Connected.")
+            warning_box.label(text="Do not start while the headset is still connecting.")
             layout.operator(
                 "rvretep.toggle_session",
                 text="Start VR Session",
@@ -2210,7 +2209,8 @@ def rvretep_load_post(_dummy):
             scene.rvretep_is_recording = False
         except Exception:
             pass
-    _RECORDER_ACTIVE = None
+    _RECORDER_ACTIVE = False
+    _RECORDER_TIMER = None
 
 
 # -----------------------------------------------------------------------------
