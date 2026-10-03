@@ -20,7 +20,7 @@ RVretep is a lightweight Blender extension for recording OpenXR headset and cont
 
 ## Recording
 
-Start Blender's OpenXR session, open **View3D → Sidebar → VR Recording**, then start Feedback Recording.
+Start Blender's OpenXR session, open **View3D → Sidebar → VR Recording**, then start VR Recording.
 
 During capture, Blender remains responsible for animation, rendering, and audio playback. RVretep only samples the latest OpenXR poses and records their actual Blender timeline positions. The hot capture path intentionally avoids dependency-graph updates and desktop 3D View redraws.
 
