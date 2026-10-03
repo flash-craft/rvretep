@@ -40,8 +40,9 @@ LIVE_OBJECT_HEAD = "VRLive_Head"
 LIVE_OBJECT_HAND_L = "VRLive_Hand_L"
 LIVE_OBJECT_HAND_R = "VRLive_Hand_R"
 
-_ACTIVE_RECORDER = None
-_ACTIVE_LIVE_RIG = None
+_RECORDER_ACTIVE = False
+_RECORDER_TIMER = None
+_LIVE_RIG_RUNTIME = None
 _LIVE_RIG_GENERATION = 0
 _SESSION_ENUM_CACHE = []
 
@@ -455,163 +456,172 @@ def update_live_rig_objects(
     return collection, head, hand_l, hand_r
 
 
+class _LiveRigRuntime:
+    """Plain runtime state. Never store a Blender Operator instance globally."""
+    __slots__ = ("generation", "timer", "objects", "suspended", "shutdown")
+
+    def __init__(self, generation, objects):
+        self.generation = generation
+        self.timer = None
+        self.objects = objects
+        self.suspended = False
+        self.shutdown = False
+
+    def start(self, context):
+        if self.timer is not None or self.shutdown:
+            return
+        hz = max(15.0, float(context.scene.rvretep_live_rig_hz))
+        self.timer = context.window_manager.event_timer_add(
+            1.0 / hz,
+            window=context.window,
+        )
+
+    def stop(self, context):
+        timer = self.timer
+        self.timer = None
+        if timer is not None:
+            try:
+                context.window_manager.event_timer_remove(timer)
+            except Exception:
+                pass
+
+
+def stop_live_rig_runtime(context, runtime=None):
+    global _LIVE_RIG_RUNTIME
+    runtime = runtime or _LIVE_RIG_RUNTIME
+    if runtime is None:
+        return
+    runtime.shutdown = True
+    runtime.suspended = False
+    runtime.stop(context)
+    if _LIVE_RIG_RUNTIME is runtime:
+        _LIVE_RIG_RUNTIME = None
+
+
 class RVRETEP_OT_toggle_live_rig(bpy.types.Operator):
     bl_idname = "rvretep.toggle_live_rig"
     bl_label = "Toggle Live VR Rig"
-    bl_description = "Continuously drive dedicated VR head/controller empties from the live OpenXR session"
+    bl_description = "Enable or disable the persistent realtime OpenXR tracking rig"
     bl_options = {'REGISTER'}
 
-    _timer = None
-    _running = False
-
     def execute(self, context):
-        global _ACTIVE_LIVE_RIG, _LIVE_RIG_GENERATION
+        global _LIVE_RIG_RUNTIME, _LIVE_RIG_GENERATION
 
         scene = context.scene
 
-        self._timer = None
-        self._running = False
-        self._generation = 0
-        self._shutdown_requested = False
-        self._suspended_by_recorder = False
-        self.live_rig_objects = None
-
-        # Reuse one modal instance across rapid enable/disable cycles.
-        active_rig = _ACTIVE_LIVE_RIG
-
         if scene.rvretep_live_rig_enabled:
             scene.rvretep_live_rig_enabled = False
-
-            if active_rig is not None:
-                active_rig.stop_timer(context)
-                active_rig._suspended_by_recorder = False
-                active_rig._shutdown_requested = False
-
+            stop_live_rig_runtime(context)
             self.report(
                 {'INFO'},
-                "Live VR Rig disabled. The rig remains in the scene at its last pose."
+                "Live VR Rig disabled. The rig remains in the scene at its last pose.",
             )
             return {'FINISHED'}
 
         if not is_xr_running(context):
             self.report(
                 {'ERROR'},
-                "Cannot enable Live VR Rig: OpenXR is not running. Start the VR Session first."
+                "Cannot enable Live VR Rig: OpenXR is not running. Start the VR Session first.",
             )
             return {'CANCELLED'}
 
-        # Reuse an existing modal operator whenever it is still valid.
-        if active_rig is not None and not active_rig._shutdown_requested:
-            try:
-                if active_rig.live_rig_objects is None:
-                    active_rig.live_rig_objects = ensure_live_rig(context)
-
-                scene.rvretep_live_rig_enabled = True
-                active_rig._suspended_by_recorder = False
-                active_rig.start_timer(context)
-
-                self.report(
-                    {'INFO'},
-                    f"Live VR Rig enabled at {scene.rvretep_live_rig_hz:.0f} Hz."
-                )
-                return {'FINISHED'}
-            except Exception as exc:
-                scene.rvretep_live_rig_enabled = False
-                self.report(
-                    {'ERROR'},
-                    f"Could not resume the existing Live VR Rig: {exc}"
-                )
-                return {'CANCELLED'}
+        # Invalidate and stop any stale runtime without retaining its Operator.
+        stop_live_rig_runtime(context)
 
         try:
-            self.live_rig_objects = ensure_live_rig(context)
+            objects = ensure_live_rig(context)
         except Exception as exc:
             self.report(
                 {'ERROR'},
-                f"Could not create the Live VR Rig: {exc}"
+                f"Could not create the Live VR Rig: {exc}",
             )
             return {'CANCELLED'}
 
         _LIVE_RIG_GENERATION += 1
-        self._generation = _LIVE_RIG_GENERATION
-        self._shutdown_requested = False
-        self._suspended_by_recorder = False
-
+        runtime = _LiveRigRuntime(_LIVE_RIG_GENERATION, objects)
+        runtime.suspended = bool(scene.rvretep_is_recording)
+        _LIVE_RIG_RUNTIME = runtime
         scene.rvretep_live_rig_enabled = True
-        _ACTIVE_LIVE_RIG = self
-
-        # Recording owns the high-rate XR sampling timer.
-        if scene.rvretep_is_recording:
-            self.report(
-                {'INFO'},
-                "Live VR Rig enabled. The active recorder will drive it during capture."
-            )
-            return {'FINISHED'}
 
         try:
-            self.start_timer(context)
+            result = bpy.ops.rvretep.live_rig_modal('INVOKE_DEFAULT')
         except Exception as exc:
+            stop_live_rig_runtime(context, runtime)
             scene.rvretep_live_rig_enabled = False
-            self._shutdown_requested = True
-            if _ACTIVE_LIVE_RIG is self:
-                _ACTIVE_LIVE_RIG = None
             self.report(
                 {'ERROR'},
-                f"Could not start Live VR Rig updates: {exc}"
+                f"Could not start the Live VR Rig: {exc}",
+            )
+            return {'CANCELLED'}
+
+        if 'RUNNING_MODAL' not in result:
+            stop_live_rig_runtime(context, runtime)
+            scene.rvretep_live_rig_enabled = False
+            self.report(
+                {'ERROR'},
+                "Blender did not start the Live VR Rig modal handler.",
             )
             return {'CANCELLED'}
 
         self.report(
             {'INFO'},
-            f"Live VR Rig enabled at {scene.rvretep_live_rig_hz:.0f} Hz."
+            f"Live VR Rig enabled at {scene.rvretep_live_rig_hz:.0f} Hz.",
         )
         return {'FINISHED'}
 
-    def start_timer(self, context):
-        if self._timer is not None:
-            return
 
-        poll_hz = max(15.0, float(context.scene.rvretep_live_rig_hz))
-        self._timer = context.window_manager.event_timer_add(
-            1.0 / poll_hz,
-            window=context.window,
-        )
+class RVRETEP_OT_live_rig_modal(bpy.types.Operator):
+    bl_idname = "rvretep.live_rig_modal"
+    bl_label = "Live VR Rig Runtime"
+    bl_description = "Internal Live VR Rig tracking worker"
+    bl_options = {'INTERNAL'}
+
+    def invoke(self, context, _event):
+        runtime = _LIVE_RIG_RUNTIME
+
+        if runtime is None:
+            self.report({'ERROR'}, "Live VR Rig runtime state is missing.")
+            return {'CANCELLED'}
+
+        self._runtime = runtime
+
+        try:
+            runtime.start(context)
+        except Exception as exc:
+            self.report({'ERROR'}, f"Could not start the Live VR Rig timer: {exc}")
+            return {'CANCELLED'}
+
         context.window_manager.modal_handler_add(self)
-        self._running = True
-
-    def stop_timer(self, context):
-        if self._timer is not None:
-            try:
-                context.window_manager.event_timer_remove(self._timer)
-            except Exception:
-                pass
-            self._timer = None
-        self._running = False
+        return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
-        global _ACTIVE_LIVE_RIG
+        runtime = getattr(self, "_runtime", None)
 
-        if self._shutdown_requested or _ACTIVE_LIVE_RIG is not self:
-            self.stop_timer(context)
+        if runtime is None or runtime.shutdown:
+            if runtime is not None:
+                runtime.stop(context)
             return {'FINISHED'}
 
-        if not context.scene.rvretep_live_rig_enabled:
-            self.stop_timer(context)
-            return {'PASS_THROUGH'}
+        if _LIVE_RIG_RUNTIME is not runtime:
+            runtime.stop(context)
+            return {'FINISHED'}
 
-        # During recording, the recorder owns the pose-sampling loop. The
-        # standalone timer should remain suspended until recording ends.
-        if self._suspended_by_recorder:
-            self.stop_timer(context)
+        scene = context.scene
+
+        if not scene.rvretep_live_rig_enabled:
+            stop_live_rig_runtime(context, runtime)
+            return {'FINISHED'}
+
+        if runtime.suspended:
             return {'PASS_THROUGH'}
 
         if not is_xr_running(context):
-            context.scene.rvretep_live_rig_enabled = False
-            self._shutdown_requested = True
-            self.stop_timer(context)
-            if _ACTIVE_LIVE_RIG is self:
-                _ACTIVE_LIVE_RIG = None
-            self.report({'WARNING'}, "Live VR Rig stopped because the OpenXR session is no longer running.")
+            scene.rvretep_live_rig_enabled = False
+            stop_live_rig_runtime(context, runtime)
+            self.report(
+                {'WARNING'},
+                "Live VR Rig stopped because the OpenXR session is no longer running.",
+            )
             return {'FINISHED'}
 
         if event.type != 'TIMER':
@@ -619,7 +629,7 @@ class RVRETEP_OT_toggle_live_rig(bpy.types.Operator):
 
         try:
             xr_state = get_xr_state(context)
-            if not xr_state:
+            if xr_state is None:
                 raise RuntimeError("OpenXR session state is unavailable.")
 
             head_loc = tuple(float(v) for v in xr_state.viewer_pose_location)
@@ -646,52 +656,19 @@ class RVRETEP_OT_toggle_live_rig(bpy.types.Operator):
                 (head_loc, head_rot),
                 hand_l_data,
                 hand_r_data,
-                self.live_rig_objects,
+                runtime.objects,
             )
 
         except Exception as exc:
-            context.scene.rvretep_live_rig_enabled = False
-            self._shutdown_requested = True
-            self.stop_timer(context)
-            if _ACTIVE_LIVE_RIG is self:
-                _ACTIVE_LIVE_RIG = None
-            self.report({'ERROR'}, f"Live VR Rig update failed and was stopped: {exc}")
+            scene.rvretep_live_rig_enabled = False
+            stop_live_rig_runtime(context, runtime)
+            self.report(
+                {'ERROR'},
+                f"Live VR Rig update failed and was stopped: {exc}",
+            )
             return {'FINISHED'}
 
         return {'PASS_THROUGH'}
-
-    def suspend_timer(self, context):
-        """Temporarily yield XR polling to the recorder without cross-removing timers."""
-        self._suspended_by_recorder = True
-
-    def resume_timer(self, context):
-        """Resume standalone live updates after recording ends."""
-        global _ACTIVE_LIVE_RIG
-
-        if not context.scene.rvretep_live_rig_enabled:
-            self._suspended_by_recorder = False
-            return
-
-        if _ACTIVE_LIVE_RIG is not self:
-            self._suspended_by_recorder = False
-            return
-
-        self._suspended_by_recorder = False
-
-        if is_xr_running(context):
-            try:
-                self.start_timer(context)
-            except Exception:
-                context.scene.rvretep_live_rig_enabled = False
-                self._shutdown_requested = True
-                if _ACTIVE_LIVE_RIG is self:
-                    _ACTIVE_LIVE_RIG = None
-                raise
-
-    def emergency_cleanup(self, context):
-        self._shutdown_requested = True
-        self._suspended_by_recorder = False
-        self.stop_timer(context)
 
 
 # -----------------------------------------------------------------------------
@@ -710,7 +687,7 @@ class RVRETEP_OT_toggle_session(bpy.types.Operator):
         return context.window_manager is not None
 
     def execute(self, context):
-        global _ACTIVE_LIVE_RIG
+        global _LIVE_RIG_RUNTIME
 
         if context.scene.rvretep_is_recording:
             self.report({'ERROR'}, "Stop the VR recording before closing the XR session.")
@@ -718,10 +695,9 @@ class RVRETEP_OT_toggle_session(bpy.types.Operator):
 
         # If the user closes XR manually, release the Live VR Rig modal timer
         # first so it cannot keep polling a session that no longer exists.
-        if _ACTIVE_LIVE_RIG is not None and context.scene.rvretep_live_rig_enabled:
-            _ACTIVE_LIVE_RIG._shutdown_requested = True
+        if _LIVE_RIG_RUNTIME is not None and context.scene.rvretep_live_rig_enabled:
+            stop_live_rig_runtime(context, _LIVE_RIG_RUNTIME)
             context.scene.rvretep_live_rig_enabled = False
-            _ACTIVE_LIVE_RIG = None
 
         try:
             bpy.ops.wm.xr_session_toggle()
@@ -1058,7 +1034,7 @@ class RVRETEP_OT_record_gameplay(bpy.types.Operator):
     _timer = None
 
     def execute(self, context):
-        global _ACTIVE_RECORDER
+        global _RECORDER_ACTIVE
 
         scene = context.scene
 
@@ -1068,17 +1044,18 @@ class RVRETEP_OT_record_gameplay(bpy.types.Operator):
             scene.rvretep_is_recording = False
             return {'FINISHED'}
 
-        if _ACTIVE_RECORDER is not None:
+        if _RECORDER_ACTIVE:
             self.report({'ERROR'}, "Another VR recording operator is already active.")
             return {'CANCELLED'}
 
         # --------------------------------------------------------------
         # Validation
         # --------------------------------------------------------------
-        if bpy.app.version < bl_info["blender"]:
+        if bpy.app.version < MIN_BLENDER_VERSION:
+            minimum_text = ".".join(map(str, MIN_BLENDER_VERSION))
             self.report(
                 {'ERROR'},
-                f"Blender {bpy.app.version} is not supported. Blender 4.1 or newer is required."
+                f"Blender {bpy.app.version} is not supported. Blender {minimum_text} or newer is required."
             )
             return {'CANCELLED'}
 
@@ -1099,9 +1076,9 @@ class RVRETEP_OT_record_gameplay(bpy.types.Operator):
         self.live_rig_was_running = False
         if (
             scene.rvretep_live_rig_enabled
-            and _ACTIVE_LIVE_RIG is not None
+            and _LIVE_RIG_RUNTIME is not None
         ):
-            _ACTIVE_LIVE_RIG.suspend_timer(context)
+            _LIVE_RIG_RUNTIME.suspended = True
             self.live_rig_was_running = True
 
         self.old_sync_mode = scene.sync_mode
@@ -1139,7 +1116,11 @@ class RVRETEP_OT_record_gameplay(bpy.types.Operator):
         self.started_animation_playback = False
         self.playback_was_running = False
         self.stop_reason = "User stopped recording."
-        self.live_rig_objects = getattr(_ACTIVE_LIVE_RIG, 'live_rig_objects', None)
+        self.live_rig_objects = (
+            _LIVE_RIG_RUNTIME.objects
+            if _LIVE_RIG_RUNTIME is not None
+            else None
+        )
         if scene.rvretep_live_rig_enabled and self.live_rig_objects is None:
             try:
                 self.live_rig_objects = ensure_live_rig(context)
@@ -1194,6 +1175,7 @@ class RVRETEP_OT_record_gameplay(bpy.types.Operator):
                 1.0 / poll_hz,
                 window=context.window,
             )
+            _RECORDER_TIMER = self._timer
             context.window_manager.modal_handler_add(self)
         except Exception as exc:
             self.cleanup_unbaked_recording(context)
@@ -1201,7 +1183,7 @@ class RVRETEP_OT_record_gameplay(bpy.types.Operator):
             return {'CANCELLED'}
 
         scene.rvretep_is_recording = True
-        _ACTIVE_RECORDER = self
+        _RECORDER_ACTIVE = True
 
         audio_count = count_audio_strips(scene)
         if audio_count:
@@ -1444,7 +1426,7 @@ class RVRETEP_OT_record_gameplay(bpy.types.Operator):
     # DEV EASTER EGG: retep is still aggressively resisting 90 Hz viewport redraws.
 
     def stop_recording(self, context):
-        global _ACTIVE_RECORDER
+        global _RECORDER_ACTIVE, _RECORDER_TIMER
 
         if self._finalizing:
             return
@@ -1459,6 +1441,7 @@ class RVRETEP_OT_record_gameplay(bpy.types.Operator):
             except Exception:
                 pass
             self._timer = None
+            _RECORDER_TIMER = None
 
         # Stop Blender playback only when this operator owns it.
         if self.started_animation_playback:
@@ -1479,11 +1462,11 @@ class RVRETEP_OT_record_gameplay(bpy.types.Operator):
             self.restore_playback_settings(scene)
             scene.rvretep_is_recording = False
             scene.rvretep_active_session_id = "NONE"
-            _ACTIVE_RECORDER = None
+            _RECORDER_ACTIVE = None
 
-            if scene.rvretep_live_rig_enabled and _ACTIVE_LIVE_RIG is not None:
+            if scene.rvretep_live_rig_enabled and _LIVE_RIG_RUNTIME is not None:
                 try:
-                    _ACTIVE_LIVE_RIG.resume_timer(context)
+                    _LIVE_RIG_RUNTIME.suspended = False
                 except Exception as exc:
                     self.report({'WARNING'}, f"Live VR Rig could not resume: {exc}")
 
@@ -1578,11 +1561,11 @@ class RVRETEP_OT_record_gameplay(bpy.types.Operator):
             self.restore_playback_settings(scene)
             scene.rvretep_is_recording = False
 
-            _ACTIVE_RECORDER = None
+            _RECORDER_ACTIVE = None
 
-            if scene.rvretep_live_rig_enabled and _ACTIVE_LIVE_RIG is not None:
+            if scene.rvretep_live_rig_enabled and _LIVE_RIG_RUNTIME is not None:
                 try:
-                    _ACTIVE_LIVE_RIG.resume_timer(context)
+                    _LIVE_RIG_RUNTIME.suspended = False
                 except Exception as exc:
                     self.report({'WARNING'}, f"VR recording finished, but Live VR Rig could not resume: {exc}")
 
@@ -1610,11 +1593,11 @@ class RVRETEP_OT_record_gameplay(bpy.types.Operator):
             )
             self.restore_playback_settings(scene)
             scene.rvretep_is_recording = False
-            _ACTIVE_RECORDER = None
+            _RECORDER_ACTIVE = None
 
-            if scene.rvretep_live_rig_enabled and _ACTIVE_LIVE_RIG is not None:
+            if scene.rvretep_live_rig_enabled and _LIVE_RIG_RUNTIME is not None:
                 try:
-                    _ACTIVE_LIVE_RIG.resume_timer(context)
+                    _LIVE_RIG_RUNTIME.suspended = False
                 except Exception as resume_exc:
                     self.report({'WARNING'}, f"Live VR Rig could not resume after bake failure: {resume_exc}")
 
@@ -1674,7 +1657,7 @@ class RVRETEP_OT_record_gameplay(bpy.types.Operator):
             pass
 
     def cleanup_unbaked_recording(self, context):
-        global _ACTIVE_RECORDER
+        global _RECORDER_ACTIVE, _RECORDER_TIMER
 
         if self._timer is not None:
             try:
@@ -1682,6 +1665,7 @@ class RVRETEP_OT_record_gameplay(bpy.types.Operator):
             except Exception:
                 pass
             self._timer = None
+            _RECORDER_TIMER = None
 
         if self.started_animation_playback:
             try:
@@ -1696,7 +1680,7 @@ class RVRETEP_OT_record_gameplay(bpy.types.Operator):
         self.restore_playback_settings(context.scene)
         context.scene.rvretep_is_recording = False
         context.scene.rvretep_active_session_id = "NONE"
-        _ACTIVE_RECORDER = None
+        _RECORDER_ACTIVE = None
 
     # ------------------------------------------------------------------
     # Emergency cleanup when Blender reloads/disables the add-on.
@@ -2204,23 +2188,23 @@ class RVRETEP_PT_panel(bpy.types.Panel):
 @persistent
 def rvretep_load_post(_dummy):
     """Never restore an in-progress recorder or live XR timer from a .blend file."""
-    global _ACTIVE_RECORDER, _ACTIVE_LIVE_RIG, _LIVE_RIG_GENERATION
+    global _RECORDER_ACTIVE, _RECORDER_TIMER, _LIVE_RIG_RUNTIME, _LIVE_RIG_GENERATION
 
     _LIVE_RIG_GENERATION += 1
 
-    if _ACTIVE_LIVE_RIG is not None:
+    if _LIVE_RIG_RUNTIME is not None:
         try:
-            _ACTIVE_LIVE_RIG.emergency_cleanup(bpy.context)
+            stop_live_rig_runtime(bpy.context, _LIVE_RIG_RUNTIME)
         except Exception:
             pass
-        _ACTIVE_LIVE_RIG = None
+        _LIVE_RIG_RUNTIME = None
 
     for scene in bpy.data.scenes:
         try:
             scene.rvretep_is_recording = False
         except Exception:
             pass
-    _ACTIVE_RECORDER = None
+    _RECORDER_ACTIVE = None
 
 
 # -----------------------------------------------------------------------------
@@ -2231,6 +2215,7 @@ def rvretep_load_post(_dummy):
 classes = (
     RVRETEP_OT_toggle_session,
     RVRETEP_OT_toggle_live_rig,
+    RVRETEP_OT_live_rig_modal,
     RVRETEP_OT_select_live_rig,
     RVRETEP_OT_reset_tracking,
     RVRETEP_OT_validate_setup,
@@ -2357,24 +2342,25 @@ def register():
 
 
 def unregister():
-    global _ACTIVE_RECORDER, _ACTIVE_LIVE_RIG, _SESSION_ENUM_CACHE
+    global _RECORDER_ACTIVE, _RECORDER_TIMER, _LIVE_RIG_RUNTIME, _SESSION_ENUM_CACHE
 
-    if _ACTIVE_LIVE_RIG is not None:
+    if _LIVE_RIG_RUNTIME is not None:
         try:
-            _ACTIVE_LIVE_RIG.emergency_cleanup(bpy.context)
+            stop_live_rig_runtime(bpy.context, _LIVE_RIG_RUNTIME)
         except Exception:
             pass
-        _ACTIVE_LIVE_RIG = None
+        _LIVE_RIG_RUNTIME = None
 
     # Stop the recording timer before classes/properties disappear. The modal
     # instance's in-memory raw samples cannot be safely serialized by Blender,
     # so disabling during capture is intentionally treated as a hard stop.
-    if _ACTIVE_RECORDER is not None:
+    if _RECORDER_TIMER is not None:
         try:
-            _ACTIVE_RECORDER.emergency_cleanup(bpy.context)
+            bpy.context.window_manager.event_timer_remove(_RECORDER_TIMER)
         except Exception:
             pass
-        _ACTIVE_RECORDER = None
+        _RECORDER_TIMER = None
+    _RECORDER_ACTIVE = False
 
     if rvretep_load_post in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(rvretep_load_post)
