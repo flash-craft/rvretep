@@ -1,0 +1,24 @@
+schema_version = "1.0.0"
+id = "rvretep"
+version = "1.0.0"
+name = "RVretep"
+tagline = "Record OpenXR motion against Blender animation and audio"
+maintainer = "Flash-Craft"
+type = "add-on"
+website = "https://github.com/flash-craft/rvretep"
+tags = ["Animation", "Bake", "Sequencer", "3D View", "Development"]
+blender_version_min = "4.2.0"
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
+copyright = [
+  "2026 Flash-Craft",
+]
+
+[build]
+paths_exclude_pattern = [
+  "__pycache__/",
+  ".git/",
+  "*.zip",
+  "*.pyc",
+]
