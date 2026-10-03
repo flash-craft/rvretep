@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.0 - 2026-10-03
+
+Polish and reliability update.
+
+### Changed
+
+- Added a clear VR Link readiness warning before starting an OpenXR session.
+- Hardened recorder state cleanup on .blend file load.
+- Updated release metadata and documentation for Blender 4.2+.
+
 ## 1.0.0 - 2026-10-03
 
 First public RVretep release.
