@@ -1956,6 +1956,12 @@ class RVRETEP_PT_panel(bpy.types.Panel):
                 icon='LOOP_BACK',
             )
         else:
+            warning_box = layout.box()
+            warning_box.alert = True
+            warning_box.label(text="Before starting VR:", icon='INFO')
+            warning_box.label(text="Make sure your headset is fully connected", icon='XRAY')
+            warning_box.label(text="through Meta Quest Link / Air Link.", icon='INFO')
+            warning_box.label(text="Starting while Link is still connecting can make Blender wait.", icon='ERROR')
             layout.operator(
                 "rvretep.toggle_session",
                 text="Start VR Session",
