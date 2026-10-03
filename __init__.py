@@ -2012,7 +2012,8 @@ class RVRETEP_PT_panel(bpy.types.Panel):
             text="Desktop Viewport Preview",
         )
 
-        if scene.rvretep_live_rig_enabled:            live_box.label(
+        if scene.rvretep_live_rig_enabled:
+            live_box.label(
                 text="VRLive_Head / VRLive_Hand_L / VRLive_Hand_R",
                 icon='INFO',
             )
