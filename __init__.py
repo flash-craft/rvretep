@@ -1462,7 +1462,7 @@ class RVRETEP_OT_record_gameplay(bpy.types.Operator):
             self.restore_playback_settings(scene)
             scene.rvretep_is_recording = False
             scene.rvretep_active_session_id = "NONE"
-            _RECORDER_ACTIVE = None
+            _RECORDER_ACTIVE = False
 
             if scene.rvretep_live_rig_enabled and _LIVE_RIG_RUNTIME is not None:
                 try:
