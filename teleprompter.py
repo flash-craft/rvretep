@@ -140,7 +140,7 @@ def _make_text_object(name, col, body="", size=0.033):
         col.objects.link(obj)
     curve = obj.data
     curve.body = body
-    curve.align_x = 'LEFT'
+    curve.align_x = 'CENTER'
     curve.align_y = 'CENTER'
     curve.size = size
     curve.space_line = 0.92
@@ -1093,7 +1093,7 @@ def register():
     bpy.types.Scene.rvretep_teleprompter_wrap_width = bpy.props.IntProperty(
         name="Wrap Width",
         description="Approximate characters per teleprompter line",
-        default=42,
+        default=40,
         min=24,
         max=80,
     )
