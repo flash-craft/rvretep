@@ -1,6 +1,6 @@
 schema_version = "1.0.0"
 id = "rvretep"
-version = "1.1.0"
+version = "1.1.1"
 name = "RVretep"
 tagline = "Record OpenXR motion against Blender animation and audio"
 maintainer = "Flash-Craft"
