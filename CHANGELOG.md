@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.2.0-draft - 2026-10-04
+
+Experimental VR teleprompter feature.
+
+### Added
+
+- Added a head-relative VR teleprompter rendered directly in the Blender scene.
+- Added Blender Text datablock script source selection and a New Script helper.
+- Added smooth automatic scrolling with configurable WPM and temporary thumbstick speed override.
+- Added controller controls for pause/resume and next/previous section jumps.
+- Added configurable panel distance, vertical offset, visible line count, wrapping width, and runtime update rate.
+- Added native OpenXR action-map setup with Quest Touch and simple-controller bindings plus controller grip/aim pose actions.
+- Kept the teleprompter runtime isolated from the recorder and Live VR Rig lifecycles.
+
+### Draft notes
+
+- This is an experimental 1.2.0 draft and requires hardware validation with the target OpenXR runtime.
+- Controller binding behavior may vary by headset/runtime; use Teleprompter Diagnostics when testing.
+
+
 ## 1.1.1 - 2026-10-04
 
 Reliability and setup polish.
