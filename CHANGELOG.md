@@ -2,6 +2,8 @@
 
 ## 1.2.0-draft - 2026-10-04
 
+- Reworked controller input to follow Blender 5.2's native XR action operator pattern: A/B/Trigger use press operators, and the right stick uses a dedicated modal XR action with `Event.xr.state`.
+
 - Fixed controller input routing: right-stick uses a valid single-hand binding, while Trigger/A/B are dispatched through Blender's native XR action operators.
 
 - Centered the teleprompter text/status by default, increased default viewing distance to 1.35 m, and increased text emission brightness. Teleprompter controller input now uses a dedicated action set while running so the right stick no longer also drives Blender scene navigation.
