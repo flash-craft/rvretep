@@ -1,6 +1,6 @@
 # RVretep
 
-RVretep is a lightweight Blender extension for recording OpenXR headset and controller motion directly against Blender's animation timeline.
+RVretep 1.1.1 is a lightweight Blender extension for recording OpenXR headset and controller motion directly against Blender's animation timeline.
 
 ## Features
 
