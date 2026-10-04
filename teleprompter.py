@@ -312,10 +312,13 @@ def _add_action_item(actionmap, name, action_type, user_paths, bindings):
 
 
 def configure_xr_actions(context, activate=False) -> bool:
-    """Create the teleprompter OpenXR action set and optionally activate it.
+    """Create an isolated teleprompter OpenXR action set.
 
-    The draft includes controller pose actions so activating this set does not
-    discard RVretep's existing grip/aim pose queries.
+    Do not clone Blender's active action map here. A cloned map can contain
+    controller bindings for unrelated interaction profiles that the current
+    OpenXR runtime rejects; Blender 5.2.2 can crash in native XR code while
+    creating one of those bindings. The teleprompter only needs four input
+    actions, so keep this action set deliberately small and verified.
     """
     state = get_xr_state(context)
     if state is None:
@@ -334,35 +337,29 @@ def configure_xr_actions(context, activate=False) -> bool:
 
     if actionmap is None:
         try:
-            base_index = int(state.active_actionmap)
-            base_map = maps[base_index] if 0 <= base_index < len(maps) else None
+            actionmap = maps.new(state, ACTION_MAP_NAME, True)
         except Exception:
-            base_map = None
+            return False
 
-        # Prefer cloning Blender's current map so native VR navigation actions
-        # remain available in the teleprompter action set.
-        if base_map is not None:
+    # Rebuild only the teleprompter actions. In particular, never inherit
+    # Blender's default controller_grip/controller_aim bindings or other
+    # interaction profiles from a cloned map.
+    try:
+        for old_item in list(actionmap.actionmap_items):
             try:
-                actionmap = maps.new_from_actionmap(state, base_map)
-                actionmap.name = ACTION_MAP_NAME
+                actionmap.actionmap_items.remove(old_item)
             except Exception:
-                actionmap = None
+                pass
+    except Exception:
+        pass
 
-        if actionmap is None:
-            try:
-                actionmap = maps.new(state, ACTION_MAP_NAME, True)
-            except Exception:
-                return False
-
-    # The Python action API is present in Blender 4.2+; failures are contained
-    # so an unsupported runtime leaves the teleprompter usable with UI controls.
     try:
         state.action_set_create(context, actionmap)
     except Exception:
         pass
 
-    both = [LEFT_HAND, RIGHT_HAND]
     right = [RIGHT_HAND]
+    both = [LEFT_HAND, RIGHT_HAND]
 
     _add_action_item(
         actionmap,
@@ -371,7 +368,6 @@ def configure_xr_actions(context, activate=False) -> bool:
         both,
         [
             ("Touch Thumbstick", OCULUS_PROFILE, ["/input/thumbstick"]),
-            ("Simple Controller", KHRONOS_PROFILE, ["/input/thumbstick"]),
         ],
     )
     _add_action_item(
@@ -390,7 +386,6 @@ def configure_xr_actions(context, activate=False) -> bool:
         right,
         [
             ("Right Primary", OCULUS_PROFILE, ["/input/a/click"]),
-            ("Right Primary Generic", KHRONOS_PROFILE, ["/input/select/click"]),
         ],
     )
     _add_action_item(
@@ -400,28 +395,6 @@ def configure_xr_actions(context, activate=False) -> bool:
         right,
         [
             ("Right Secondary", OCULUS_PROFILE, ["/input/b/click"]),
-            ("Right Secondary Generic", KHRONOS_PROFILE, ["/input/menu/click"]),
-        ],
-    )
-
-    _add_action_item(
-        actionmap,
-        ACTION_GRIP,
-        'POSE',
-        both,
-        [
-            ("Controller Grip", OCULUS_PROFILE, ["/input/grip/pose"]),
-            ("Controller Grip Generic", KHRONOS_PROFILE, ["/input/grip/pose"]),
-        ],
-    )
-    _add_action_item(
-        actionmap,
-        ACTION_AIM,
-        'POSE',
-        both,
-        [
-            ("Controller Aim", OCULUS_PROFILE, ["/input/aim/pose"]),
-            ("Controller Aim Generic", KHRONOS_PROFILE, ["/input/aim/pose"]),
         ],
     )
 
@@ -431,6 +404,10 @@ def configure_xr_actions(context, activate=False) -> bool:
         except Exception:
             pass
 
+    # Only verified Oculus Touch bindings are sent through Blender's native
+    # action_binding_create API. Do not attempt to recover from a native
+    # binding failure by adding more profiles; Blender 5.2.2 may fault before
+    # Python can receive an exception.
     for item in list(actionmap.actionmap_items):
         try:
             for binding in item.bindings:
@@ -439,12 +416,6 @@ def configure_xr_actions(context, activate=False) -> bool:
             pass
 
     if activate:
-        try:
-            state.controller_pose_actions_set(
-                context, ACTION_MAP_NAME, ACTION_GRIP, ACTION_AIM
-            )
-        except Exception:
-            pass
         try:
             return bool(state.active_action_set_set(context, ACTION_MAP_NAME))
         except Exception:
