@@ -44,6 +44,8 @@ KHRONOS_PROFILE = "/interaction_profiles/khr/simple_controller"
 
 _RUNTIME = None
 _GENERATION = 0
+_XR_ACTIONS_READY = False
+_XR_ACTION_MAP_NAME = ACTION_MAP_NAME
 
 
 def is_xr_running(context) -> bool:
@@ -312,117 +314,123 @@ def _add_action_item(actionmap, name, action_type, user_paths, bindings):
 
 
 def configure_xr_actions(context, activate=False) -> bool:
-    """Create an isolated teleprompter OpenXR action set.
+    """Prepare teleprompter actions during xr_session_start_pre.
 
-    Do not clone Blender's active action map here. A cloned map can contain
-    controller bindings for unrelated interaction profiles that the current
-    OpenXR runtime rejects; Blender 5.2.2 can crash in native XR code while
-    creating one of those bindings. The teleprompter only needs four input
-    actions, so keep this action set deliberately small and verified.
+    Blender's XR action API creates and attaches action sets for the upcoming
+    session from the action maps present in xr_session_start_pre. Do not create
+    or rebuild action sets while a session is already running.
     """
+    global _XR_ACTIONS_READY, _XR_ACTION_MAP_NAME
+
     state = get_xr_state(context)
     if state is None:
+        _XR_ACTIONS_READY = False
         return False
+
+    # Once the native session is running, its action sets are already attached
+    # and become immutable. There is nothing safe to create or rebuild here.
+    if is_xr_running(context):
+        return _XR_ACTIONS_READY
 
     maps = state.actionmaps
     actionmap = None
 
     try:
-        for candidate in maps:
-            if candidate.name == ACTION_MAP_NAME:
-                actionmap = candidate
-                break
+        base_index = int(state.active_actionmap)
+        if 0 <= base_index < len(maps):
+            actionmap = maps[base_index]
     except Exception:
-        pass
+        actionmap = None
+
+    # Fall back to an existing RVretep map only when Blender does not expose
+    # an active default map.
+    if actionmap is None:
+        try:
+            for candidate in maps:
+                if candidate.name == ACTION_MAP_NAME:
+                    actionmap = candidate
+                    break
+        except Exception:
+            pass
 
     if actionmap is None:
         try:
             actionmap = maps.new(state, ACTION_MAP_NAME, True)
         except Exception:
+            _XR_ACTIONS_READY = False
             return False
 
-    # Rebuild only the teleprompter actions. In particular, never inherit
-    # Blender's default controller_grip/controller_aim bindings or other
-    # interaction profiles from a cloned map.
-    try:
-        for old_item in list(actionmap.actionmap_items):
-            try:
-                actionmap.actionmap_items.remove(old_item)
-            except Exception:
-                pass
-    except Exception:
-        pass
+    _XR_ACTION_MAP_NAME = actionmap.name
 
-    try:
-        state.action_set_create(context, actionmap)
-    except Exception:
-        pass
-
+    # Only add RVretep's own items. Never remove or clone Blender's
+    # existing navigation/controller actions.
     right = [RIGHT_HAND]
     both = [LEFT_HAND, RIGHT_HAND]
 
-    _add_action_item(
-        actionmap,
-        ACTION_SCROLL,
-        'VECTOR2D',
-        both,
-        [
-            ("Touch Thumbstick", OCULUS_PROFILE, ["/input/thumbstick"]),
-        ],
-    )
-    _add_action_item(
-        actionmap,
-        ACTION_PAUSE,
-        'FLOAT',
-        right,
-        [
-            ("Right Trigger", OCULUS_PROFILE, ["/input/trigger/value"]),
-        ],
-    )
-    _add_action_item(
-        actionmap,
-        ACTION_NEXT,
-        'FLOAT',
-        right,
-        [
-            ("Right Primary", OCULUS_PROFILE, ["/input/a/click"]),
-        ],
-    )
-    _add_action_item(
-        actionmap,
-        ACTION_PREVIOUS,
-        'FLOAT',
-        right,
-        [
-            ("Right Secondary", OCULUS_PROFILE, ["/input/b/click"]),
-        ],
+    items = (
+        _add_action_item(
+            actionmap,
+            ACTION_SCROLL,
+            'VECTOR2D',
+            both,
+            [("Touch Thumbstick", OCULUS_PROFILE, ["/input/thumbstick"])],
+        ),
+        _add_action_item(
+            actionmap,
+            ACTION_PAUSE,
+            'FLOAT',
+            right,
+            [("Right Trigger", OCULUS_PROFILE, ["/input/trigger/value"])],
+        ),
+        _add_action_item(
+            actionmap,
+            ACTION_NEXT,
+            'FLOAT',
+            right,
+            [("Right Primary", OCULUS_PROFILE, ["/input/a/click"])],
+        ),
+        _add_action_item(
+            actionmap,
+            ACTION_PREVIOUS,
+            'FLOAT',
+            right,
+            [("Right Secondary", OCULUS_PROFILE, ["/input/b/click"])],
+        ),
     )
 
-    for item in list(actionmap.actionmap_items):
-        try:
-            state.action_create(context, actionmap, item)
-        except Exception:
-            pass
+    if any(item is None for item in items):
+        _XR_ACTIONS_READY = False
+        return False
 
-    # Only verified Oculus Touch bindings are sent through Blender's native
-    # action_binding_create API. Do not attempt to recover from a native
-    # binding failure by adding more profiles; Blender 5.2.2 may fault before
-    # Python can receive an exception.
-    for item in list(actionmap.actionmap_items):
-        try:
-            for binding in item.bindings:
-                state.action_binding_create(context, actionmap, item, binding)
-        except Exception:
-            pass
+    # These calls are intentionally made only in xr_session_start_pre.
+    try:
+        if not state.action_set_create(context, actionmap):
+            _XR_ACTIONS_READY = False
+            return False
+    except Exception:
+        _XR_ACTIONS_READY = False
+        return False
 
-    if activate:
+    for item in items:
         try:
-            return bool(state.active_action_set_set(context, ACTION_MAP_NAME))
+            if not state.action_create(context, actionmap, item):
+                _XR_ACTIONS_READY = False
+                return False
         except Exception:
+            _XR_ACTIONS_READY = False
             return False
 
-    return True
+        for binding in item.bindings:
+            try:
+                if not state.action_binding_create(context, actionmap, item, binding):
+                    _XR_ACTIONS_READY = False
+                    return False
+            except Exception:
+                _XR_ACTIONS_READY = False
+                return False
 
+    _XR_ACTIONS_READY = True
+    return True
 
 class _TeleprompterRuntime:
     __slots__ = (
@@ -431,7 +439,7 @@ class _TeleprompterRuntime:
         "base_wpm", "manual_step", "paused", "last_time", "last_start",
         "previous_pause", "previous_next", "previous_previous",
         "previous_scroll_y", "saved_action_set", "line_word_count",
-        "finished_notice",
+        "finished_notice", "action_map_name",
     )
 
     def __init__(self, generation, root, panel, status, lines, text_block):
@@ -457,6 +465,7 @@ class _TeleprompterRuntime:
         self.saved_action_set = None
         self.line_word_count = 3.0
         self.finished_notice = False
+        self.action_map_name = _XR_ACTION_MAP_NAME
 
     def start(self, context):
         hz = max(20.0, float(context.scene.rvretep_teleprompter_update_hz))
@@ -528,7 +537,7 @@ class _TeleprompterRuntime:
         def read(name, user_path):
             try:
                 value = state.action_state_get(
-                    context, ACTION_MAP_NAME, name, user_path
+                    context, self.action_map_name, name, user_path
                 )
                 return tuple(float(v) for v in value)
             except Exception:
@@ -683,13 +692,6 @@ def _stop_runtime(context, runtime=None, delete_scene_objects=True):
 
     runtime.stop(context)
 
-    if runtime.saved_action_set and is_xr_running(context):
-        try:
-            get_xr_state(context).active_action_set_set(
-                context, runtime.saved_action_set
-            )
-        except Exception:
-            pass
 
     if delete_scene_objects:
         _clear_collection_runtime_objects()
@@ -776,12 +778,8 @@ class RVRETEP_OT_teleprompter_toggle(bpy.types.Operator):
             runtime.load_script(context.scene)
             runtime.saved_action_set = _active_map_name(get_xr_state(context))
 
-            configured = configure_xr_actions(context, activate=True)
-            if not configured:
-                self.report(
-                    {'WARNING'},
-                    "Teleprompter UI started, but native XR actions could not be activated.",
-                )
+            configured = _XR_ACTIONS_READY
+
 
             runtime.start(context)
             _RUNTIME = runtime
@@ -922,7 +920,8 @@ class RVRETEP_OT_teleprompter_diagnostics(bpy.types.Operator):
             f"OpenXR running: {'YES' if is_xr_running(context) else 'NO'}",
             f"Script: {text_block.name if text_block else 'NONE'}",
             f"Teleprompter runtime: {'ACTIVE' if _RUNTIME else 'OFF'}",
-            f"Native XR action set: {ACTION_MAP_NAME}",
+            f"Native XR action map: {_XR_ACTION_MAP_NAME}",
+            f"Native XR actions ready: {"YES" if _XR_ACTIONS_READY else "NO"}",
         ]
         if text_block:
             line_count = text_block.as_string().count("\n") + 1
@@ -993,18 +992,18 @@ class RVRETEP_PT_teleprompter:
 
 @persistent
 def rvretep_xr_session_start_pre():
-    # Register the action map before a new native XR session starts. Blender
-    # documents xr_session_start_pre specifically for default XR action maps.
+    # Blender's supported lifecycle for XR action creation.
     try:
         if hasattr(bpy.app.handlers, "xr_session_start_pre"):
-            configure_xr_actions(bpy.context, activate=False)
-    except Exception:
-        pass
+            if not configure_xr_actions(bpy.context, activate=False):
+                print("[RVretep] Failed to prepare teleprompter XR actions.")
+    except Exception as exc:
+        print(f"[RVretep] XR action setup failed: {exc}")
 
 
 @persistent
 def rvretep_load_post(_dummy):
-    global _RUNTIME, _GENERATION
+    global _RUNTIME, _GENERATION, _XR_ACTIONS_READY, _XR_ACTION_MAP_NAME
     _GENERATION += 1
     if _RUNTIME is not None:
         try:
@@ -1012,6 +1011,8 @@ def rvretep_load_post(_dummy):
         except Exception:
             pass
     _RUNTIME = None
+    _XR_ACTIONS_READY = False
+    _XR_ACTION_MAP_NAME = ACTION_MAP_NAME
 
     for scene in bpy.data.scenes:
         try:
