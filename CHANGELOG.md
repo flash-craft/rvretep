@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.2.0-draft - 2026-10-04
+
+- Reworked controller input to follow Blender 5.2's native XR action operator pattern: A/B/Trigger use press operators, and the right stick uses a dedicated modal XR action with `Event.xr.state`.
+
+- Fixed controller input routing: right-stick uses a valid single-hand binding, while Trigger/A/B are dispatched through Blender's native XR action operators.
+
+- Centered the teleprompter text/status by default, increased default viewing distance to 1.35 m, and increased text emission brightness. Teleprompter controller input now uses a dedicated action set while running so the right stick no longer also drives Blender scene navigation.
+
+- Moved teleprompter XR action creation into Blender's `xr_session_start_pre` lifecycle and reuse the active Blender action map instead of activating a new action set during a running session.
+
+- Fixed native XR binding crash by isolating the teleprompter action map from inherited controller profiles. Draft bindings are currently limited to Oculus Touch.
+
+Experimental VR teleprompter feature.
+
+### Added
+
+- Added a head-relative VR teleprompter rendered directly in the Blender scene.
+- Added Blender Text datablock script source selection and a New Script helper.
+- Added smooth automatic scrolling with configurable WPM and temporary thumbstick speed override.
+- Added controller controls for pause/resume and next/previous section jumps.
+- Added configurable panel distance, vertical offset, visible line count, wrapping width, and runtime update rate.
+- Added native OpenXR action-map setup with Quest Touch and simple-controller bindings plus controller grip/aim pose actions.
+- Kept the teleprompter runtime isolated from the recorder and Live VR Rig lifecycles.
+
+### Draft notes
+
+- This is an experimental 1.2.0 draft and requires hardware validation with the target OpenXR runtime.
+- Controller binding behavior may vary by headset/runtime; use Teleprompter Diagnostics when testing.
+
+
 ## 1.1.1 - 2026-10-04
 
 Reliability and setup polish.
