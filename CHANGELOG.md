@@ -2,6 +2,8 @@
 
 ## 1.2.0-draft - 2026-10-04
 
+- Fixed controller input routing: right-stick uses a valid single-hand binding, while Trigger/A/B are dispatched through Blender's native XR action operators.
+
 - Centered the teleprompter text/status by default, increased default viewing distance to 1.35 m, and increased text emission brightness. Teleprompter controller input now uses a dedicated action set while running so the right stick no longer also drives Blender scene navigation.
 
 - Moved teleprompter XR action creation into Blender's `xr_session_start_pre` lifecycle and reuse the active Blender action map instead of activating a new action set during a running session.
