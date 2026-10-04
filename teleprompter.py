@@ -366,6 +366,8 @@ def configure_xr_actions(context, activate=False) -> bool:
             'VECTOR2D',
             right,
             [("Touch Thumbstick", OCULUS_PROFILE, ["/input/thumbstick"])],
+            operator="rvretep.teleprompter_scroll",
+            op_mode='MODAL',
         ),
         _add_action_item(
             actionmap,
@@ -623,21 +625,9 @@ class _TeleprompterRuntime:
 
         self.last_start = start
 
-    def update_scroll_state(self, context):
-        state = get_xr_state(context)
-        if state is None:
-            return 0.0, 0.0
+    def set_stick_state(self, y):
+        self.previous_scroll_y = max(-1.0, min(1.0, float(y)))
 
-        try:
-            value = state.action_state_get(
-                context,
-                self.action_map_name,
-                ACTION_SCROLL,
-                RIGHT_HAND,
-            )
-            return float(value[0]), float(value[1])
-        except Exception:
-            return 0.0, 0.0
 
 
     def tick(self, context):
@@ -652,8 +642,7 @@ class _TeleprompterRuntime:
         dt = max(0.0, min(0.1, now - self.last_time))
         self.last_time = now
 
-        _stick_x, stick_y = self.update_scroll_state(context)
-        self.previous_scroll_y = stick_y
+        stick_y = self.previous_scroll_y
 
         # Automatic WPM scroll. Thumbstick movement temporarily overrides
         # the automatic rate without permanently changing the user's WPM.
@@ -878,6 +867,54 @@ class RVRETEP_OT_teleprompter_modal(bpy.types.Operator):
 
 
 
+class RVRETEP_OT_teleprompter_scroll(bpy.types.Operator):
+    bl_idname = "rvretep.teleprompter_scroll"
+    bl_label = "VR Teleprompter Stick"
+    bl_options = {'INTERNAL'}
+
+    def _handle(self, context, event):
+        runtime = getattr(self, "_runtime", None)
+        if runtime is None or runtime is not _RUNTIME:
+            return False
+
+        if event.type != 'XR_ACTION':
+            return True
+
+        xr = event.xr
+        if xr.action_set != runtime.action_map_name:
+            return True
+        if xr.action != ACTION_SCROLL or xr.user_path != RIGHT_HAND:
+            return True
+
+        runtime.set_stick_state(xr.state[1])
+
+        if event.value == 'RELEASE':
+            runtime.set_stick_state(0.0)
+
+        return True
+
+    def invoke(self, context, event):
+        self._runtime = _RUNTIME
+        if self._runtime is None:
+            return {'CANCELLED'}
+        self._handle(context, event)
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):
+        if not self._handle(context, event):
+            return {'FINISHED'}
+
+        runtime = getattr(self, "_runtime", None)
+        if runtime is None or runtime is not _RUNTIME:
+            return {'FINISHED'}
+
+        if event.type == 'XR_ACTION' and event.value == 'RELEASE':
+            return {'FINISHED'}
+
+        return {'RUNNING_MODAL'}
+
+
 class RVRETEP_OT_teleprompter_pause(bpy.types.Operator):
     bl_idname = "rvretep.teleprompter_pause"
     bl_label = "Pause / Resume"
@@ -1060,6 +1097,7 @@ _CLASSES = (
     RVRETEP_OT_teleprompter_refresh,
     RVRETEP_OT_teleprompter_toggle,
     RVRETEP_OT_teleprompter_modal,
+    RVRETEP_OT_teleprompter_scroll,
     RVRETEP_OT_teleprompter_pause,
     RVRETEP_OT_teleprompter_next,
     RVRETEP_OT_teleprompter_previous,
