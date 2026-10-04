@@ -1123,7 +1123,7 @@ def register():
         description="Automatic teleprompter reading speed",
         default=150.0,
         min=40.0,
-        max=300.0,
+        max=600.0,
         precision=0,
     )
     bpy.types.Scene.rvretep_teleprompter_manual_step = bpy.props.FloatProperty(
