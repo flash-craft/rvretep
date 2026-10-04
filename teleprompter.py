@@ -902,6 +902,9 @@ class RVRETEP_OT_teleprompter_scroll(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
     def modal(self, context, event):
+        if event.type != 'XR_ACTION':
+            return {'PASS_THROUGH'}
+
         if not self._handle(context, event):
             return {'FINISHED'}
 
@@ -909,7 +912,7 @@ class RVRETEP_OT_teleprompter_scroll(bpy.types.Operator):
         if runtime is None or runtime is not _RUNTIME:
             return {'FINISHED'}
 
-        if event.type == 'XR_ACTION' and event.value == 'RELEASE':
+        if event.value == 'RELEASE':
             return {'FINISHED'}
 
         return {'RUNNING_MODAL'}
