@@ -96,7 +96,7 @@ def _make_material(name, base_color, roughness=0.6, emission=None):
         if emission is not None:
             if "Emission Color" in bsdf.inputs:
                 bsdf.inputs["Emission Color"].default_value = (*emission, 1.0)
-                bsdf.inputs["Emission Strength"].default_value = 0.25
+                bsdf.inputs["Emission Strength"].default_value = 0.8
             elif "Emission" in bsdf.inputs:
                 bsdf.inputs["Emission"].default_value = (*emission, 1.0)
     return mat
@@ -172,15 +172,15 @@ def _ensure_scene_objects(context, line_slots):
     panel.parent = root
     panel.location = (0.0, 0.0, 0.0)
 
-    status = _make_text_object(STATUS_NAME, col, "AUTO 150 WPM  •  TRIGGER PAUSE  •  A NEXT  •  B PREVIOUS", 0.019)
+    status = _make_text_object(STATUS_NAME, col, "AUTO 150 WPM  •  TRIGGER PAUSE  •  A NEXT  •  B PREVIOUS", 0.021)
     status.parent = root
-    status.location = (-0.57, 0.315, 0.025)
+    status.location = (0.0, 0.315, 0.025)
 
     lines = []
     for index in range(line_slots):
         obj = _make_text_object(f"{LINE_PREFIX}{index:02d}", col)
         obj.parent = root
-        obj.location = (-0.57, 0.0, 0.027)
+        obj.location = (0.0, 0.0, 0.027)
         lines.append(obj)
 
     return root, panel, status, lines
@@ -314,44 +314,28 @@ def _add_action_item(actionmap, name, action_type, user_paths, bindings):
 
 
 def configure_xr_actions(context, activate=False) -> bool:
-    """Prepare teleprompter actions during xr_session_start_pre.
+    """Create the teleprompter action set before an XR session starts.
 
-    Blender's XR action API creates and attaches action sets for the upcoming
-    session from the action maps present in xr_session_start_pre. Do not create
-    or rebuild action sets while a session is already running.
+    The dedicated set contains only the teleprompter controls. It is switched
+    to while the teleprompter is running so Blender's normal thumbstick
+    navigation does not compete with the speed control.
     """
     global _XR_ACTIONS_READY, _XR_ACTION_MAP_NAME
 
     state = get_xr_state(context)
-    if state is None:
+    if state is None or is_xr_running(context):
         _XR_ACTIONS_READY = False
         return False
 
-    # Once the native session is running, its action sets are already attached
-    # and become immutable. There is nothing safe to create or rebuild here.
-    if is_xr_running(context):
-        return _XR_ACTIONS_READY
-
     maps = state.actionmaps
     actionmap = None
-
     try:
-        base_index = int(state.active_actionmap)
-        if 0 <= base_index < len(maps):
-            actionmap = maps[base_index]
+        for candidate in maps:
+            if candidate.name == ACTION_MAP_NAME:
+                actionmap = candidate
+                break
     except Exception:
-        actionmap = None
-
-    # Fall back to an existing RVretep map only when Blender does not expose
-    # an active default map.
-    if actionmap is None:
-        try:
-            for candidate in maps:
-                if candidate.name == ACTION_MAP_NAME:
-                    actionmap = candidate
-                    break
-        except Exception:
-            pass
+        pass
 
     if actionmap is None:
         try:
@@ -362,11 +346,8 @@ def configure_xr_actions(context, activate=False) -> bool:
 
     _XR_ACTION_MAP_NAME = actionmap.name
 
-    # Only add RVretep's own items. Never remove or clone Blender's
-    # existing navigation/controller actions.
     right = [RIGHT_HAND]
     both = [LEFT_HAND, RIGHT_HAND]
-
     items = (
         _add_action_item(
             actionmap,
@@ -402,7 +383,6 @@ def configure_xr_actions(context, activate=False) -> bool:
         _XR_ACTIONS_READY = False
         return False
 
-    # These calls are intentionally made only in xr_session_start_pre.
     try:
         if not state.action_set_create(context, actionmap):
             _XR_ACTIONS_READY = False
@@ -692,6 +672,14 @@ def _stop_runtime(context, runtime=None, delete_scene_objects=True):
 
     runtime.stop(context)
 
+    if runtime.saved_action_set and is_xr_running(context):
+        try:
+            get_xr_state(context).active_action_set_set(
+                context, runtime.saved_action_set
+            )
+        except Exception:
+            pass
+
 
     if delete_scene_objects:
         _clear_collection_runtime_objects()
@@ -777,12 +765,17 @@ class RVRETEP_OT_teleprompter_toggle(bpy.types.Operator):
             runtime.manual_step = float(context.scene.rvretep_teleprompter_manual_step)
             runtime.load_script(context.scene)
             runtime.saved_action_set = _active_map_name(get_xr_state(context))
+            runtime.action_map_name = _XR_ACTION_MAP_NAME
 
             if not _XR_ACTIONS_READY:
                 self.report(
                     {'WARNING'},
-                    "VR teleprompter started without native controller actions. Restart the VR session if controller input is unavailable.",
+                    "VR teleprompter controller actions are not ready. Restart the VR session before starting the teleprompter.",
                 )
+            else:
+                state = get_xr_state(context)
+                if not state.active_action_set_set(context, runtime.action_map_name):
+                    raise RuntimeError("Blender could not activate the teleprompter XR action set.")
 
             runtime.start(context)
             _RUNTIME = runtime
@@ -995,6 +988,8 @@ class RVRETEP_PT_teleprompter:
 
 @persistent
 def rvretep_xr_session_start_pre():
+    global _XR_ACTIONS_READY
+    _XR_ACTIONS_READY = False
     # Blender's supported lifecycle for XR action creation.
     try:
         if hasattr(bpy.app.handlers, "xr_session_start_pre"):
@@ -1072,7 +1067,7 @@ def register():
     bpy.types.Scene.rvretep_teleprompter_distance = bpy.props.FloatProperty(
         name="Distance",
         description="Distance of the teleprompter panel from the headset",
-        default=1.15,
+        default=1.35,
         min=0.5,
         max=3.0,
         soft_min=0.7,
