@@ -163,6 +163,7 @@ def _ensure_scene_objects(context, line_slots):
         root = bpy.data.objects.new(ROOT_NAME, None)
         col.objects.link(root)
     root.empty_display_type = 'PLAIN_AXES'
+    root.rotation_mode = 'QUATERNION'
     root.hide_render = True
 
     panel = _make_panel(col)
@@ -316,10 +317,10 @@ def configure_xr_actions(context, activate=False) -> bool:
     The draft includes controller pose actions so activating this set does not
     discard RVretep's existing grip/aim pose queries.
     """
-    if not is_xr_running(context):
+    state = get_xr_state(context)
+    if state is None:
         return False
 
-    state = get_xr_state(context)
     maps = state.actionmaps
     actionmap = None
 
@@ -817,6 +818,14 @@ class RVRETEP_OT_teleprompter_toggle(bpy.types.Operator):
             _RUNTIME = runtime
             context.scene.rvretep_teleprompter_enabled = True
             runtime.update_pose(context)
+            try:
+                result = bpy.ops.rvretep.teleprompter_modal('INVOKE_DEFAULT')
+                if 'RUNNING_MODAL' not in result:
+                    raise RuntimeError("Blender did not start the teleprompter modal handler.")
+            except Exception:
+                context.scene.rvretep_teleprompter_enabled = False
+                _stop_runtime(context, runtime, True)
+                raise
             runtime.redraw_text(context.scene)
 
             self.report(
