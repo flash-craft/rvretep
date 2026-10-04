@@ -22,9 +22,11 @@ import mathutils
 from bpy.app.handlers import persistent
 from bpy_extras import anim_utils
 
+from . import teleprompter
+
 
 # retep was here. probably.
-ADDON_VERSION = (1, 1, 1)
+ADDON_VERSION = (1, 2, 0)
 MIN_BLENDER_VERSION = (4, 2, 0)
 # dev note: retep was here; ship the boring parts too.
 # If you found this comment, congratulations: the debugger side quest worked.
@@ -2056,6 +2058,11 @@ class RVRETEP_PT_panel(bpy.types.Panel):
                 icon='INFO',
             )
 
+        # ----------------------------------------------------------
+        # VR TELEPROMPTER
+        # ----------------------------------------------------------
+        teleprompter.RVRETEP_PT_teleprompter.draw(layout, context)
+
         layout.separator()
 
         # ----------------------------------------------------------
@@ -2389,9 +2396,13 @@ def register():
     if rvretep_load_post not in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.append(rvretep_load_post)
 
+    teleprompter.register()
+
 
 def unregister():
     global _RECORDER_ACTIVE, _RECORDER_TIMER, _LIVE_RIG_RUNTIME, _SESSION_ENUM_CACHE
+
+    teleprompter.unregister()
 
     if _LIVE_RIG_RUNTIME is not None:
         try:
