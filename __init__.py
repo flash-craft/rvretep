@@ -1714,7 +1714,7 @@ class RVRETEP_OT_record_gameplay(bpy.types.Operator):
         self.restore_playback_settings(context.scene)
         context.scene.rvretep_is_recording = False
         context.scene.rvretep_active_session_id = "NONE"
-        _RECORDER_ACTIVE = None
+        _RECORDER_ACTIVE = False
 
     # ------------------------------------------------------------------
     # Emergency cleanup when Blender reloads/disables the add-on.
