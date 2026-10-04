@@ -1,6 +1,6 @@
 # RVretep
 
-RVretep 1.1.1 is a lightweight Blender extension for recording OpenXR headset and controller motion directly against Blender's animation timeline.
+RVretep 1.2.0-draft is a lightweight Blender extension for recording OpenXR headset and controller motion directly against Blender's animation timeline.
 
 ## Features
 
@@ -16,6 +16,7 @@ RVretep 1.1.1 is a lightweight Blender extension for recording OpenXR headset an
 - Setup validation and VSE audio diagnostics
 - Optional timeline markers
 - Optional post-process smoothing
+- Experimental head-relative VR teleprompter with controller controls
 - Per-session metadata for capture rate, frame range, audio, and Blender version
 
 ## Recording
@@ -64,3 +65,28 @@ VR_RECORDINGS
 ## License
 
 RVretep is licensed under the GNU General Public License, version 3 or any later version.
+
+
+## VR Teleprompter (1.2.0 draft)
+
+The experimental VR Teleprompter displays a Blender Text datablock as a head-relative panel inside the OpenXR scene.
+
+Workflow:
+
+1. Click **New Script** in the RV Recording sidebar, or create/use any Blender Text datablock.
+2. Put your presenter script into the selected Text datablock.
+3. Start the OpenXR session and choose the Text datablock in **VR Teleprompter (Experimental)**.
+4. Set a base reading speed (150 WPM is a good starting point) and start the teleprompter.
+
+Default VR controls:
+
+- Right thumbstick: temporary speed override. Push up/down to read faster/slower without permanently changing the base WPM.
+- Right trigger: pause/resume automatic scrolling.
+- Right A / primary button: next detected section.
+- Right B / secondary button: previous detected section.
+
+The teleprompter detects simple all-caps section headings such as `INTRO`, `AUDIO`, and `ENDING` and uses them for section jumps.
+
+The implementation uses Blender's native OpenXR action API and keeps its runtime state separate from the recorder and Live VR Rig. The action map is created from Blender's current XR action map when possible and includes controller grip/aim pose actions so RVretep's existing controller pose capture can continue when the teleprompter action set is active.
+
+**Draft status:** native XR action bindings are implemented, but controller behavior should be hardware-tested on Blender 5.2.2 LTS with the target headset/runtime before treating this feature as production-ready.
