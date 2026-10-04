@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.1 - 2026-10-04
+
+Reliability and setup polish.
+
+### Fixed
+
+- Fixed the **Hide Old VR Sessions** control so recorded objects are hidden consistently in the viewport.
+- Explicitly reset the Live VR Rig to disabled when RVretep is registered or a .blend is loaded.
+- Fixed recorder runtime state cleanup paths to use boolean `False` instead of `None`.
+
+### Improved
+
+- Added a prominent OpenXR / VR Link warning before starting a session when OpenXR is not already running.
+- Added a confirmation dialog explaining that starting native XR without a working runtime or connected headset can make Blender wait during XR startup.
+
 ## 1.1.0 - 2026-10-03
 
 Polish and reliability update.
