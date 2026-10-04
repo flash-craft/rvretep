@@ -778,8 +778,11 @@ class RVRETEP_OT_teleprompter_toggle(bpy.types.Operator):
             runtime.load_script(context.scene)
             runtime.saved_action_set = _active_map_name(get_xr_state(context))
 
-            configured = _XR_ACTIONS_READY
-
+            if not _XR_ACTIONS_READY:
+                self.report(
+                    {'WARNING'},
+                    "VR teleprompter started without native controller actions. Restart the VR session if controller input is unavailable.",
+                )
 
             runtime.start(context)
             _RUNTIME = runtime
@@ -921,7 +924,7 @@ class RVRETEP_OT_teleprompter_diagnostics(bpy.types.Operator):
             f"Script: {text_block.name if text_block else 'NONE'}",
             f"Teleprompter runtime: {'ACTIVE' if _RUNTIME else 'OFF'}",
             f"Native XR action map: {_XR_ACTION_MAP_NAME}",
-            f"Native XR actions ready: {"YES" if _XR_ACTIONS_READY else "NO"}",
+            f"Native XR actions ready: {'YES' if _XR_ACTIONS_READY else 'NO'}",
         ]
         if text_block:
             line_count = text_block.as_string().count("\n") + 1
