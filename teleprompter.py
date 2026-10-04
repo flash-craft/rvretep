@@ -826,7 +826,14 @@ class RVRETEP_OT_teleprompter_modal(bpy.types.Operator):
         if runtime is None or runtime is not _RUNTIME:
             return {'FINISHED'}
 
-        if event.type == 'TIMER' and event.timer == runtime.timer:
+        # Blender 5.2.2 does not expose Event.timer on every TIMER event.
+        # The teleprompter owns the runtime timer, so accept the TIMER event
+        # when the identity field is unavailable and retain the check when it
+        # is provided by the Blender build.
+        event_timer = getattr(event, "timer", None)
+        if event.type == 'TIMER' and (
+            event_timer is None or event_timer == runtime.timer
+        ):
             try:
                 if not runtime.tick(context):
                     context.scene.rvretep_teleprompter_enabled = False
