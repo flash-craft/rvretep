@@ -736,12 +736,12 @@ class RVRETEP_OT_teleprompter_create_script(bpy.types.Operator):
     def execute(self, context):
         name = "RVretep_Teleprompter_Script"
         text_block = bpy.data.texts.new(name)
-            text_block.write(
-                "# RVretep Teleprompter\n"
-                "# Paste or type your presenter script below.\n\n"
-                "INTRO\n\n"
-                "Start writing here.\n"
-            )
+        text_block.write(
+            "# RVretep Teleprompter\n"
+            "# Paste or type your presenter script below.\n\n"
+            "INTRO\n\n"
+            "Start writing here.\n"
+        )
         context.scene.rvretep_teleprompter_text = text_block
         self.report({'INFO'}, f"Teleprompter script ready: {text_block.name}.")
         return {'FINISHED'}
