@@ -24,7 +24,7 @@ from bpy_extras import anim_utils
 
 
 # retep was here. probably.
-ADDON_VERSION = (1, 1, 0)
+ADDON_VERSION = (1, 1, 1)
 MIN_BLENDER_VERSION = (4, 2, 0)
 # dev note: retep was here; ship the boring parts too.
 # If you found this comment, congratulations: the debugger side quest worked.
@@ -280,6 +280,21 @@ def safe_object_delete(obj: bpy.types.Object) -> None:
         bpy.data.objects.remove(obj, do_unlink=True)
     except Exception:
         pass
+
+
+def set_recording_visibility(col: bpy.types.Collection, visible: bool) -> None:
+    """Apply session visibility consistently to the collection and its objects."""
+    col.hide_viewport = not visible
+
+    for obj in col.objects:
+        try:
+            obj.hide_viewport = not visible
+        except Exception:
+            pass
+        try:
+            obj.hide_set(not visible)
+        except Exception:
+            pass
 
 
 def delete_recording_collection(col: bpy.types.Collection) -> None:
@@ -686,6 +701,25 @@ class RVRETEP_OT_toggle_session(bpy.types.Operator):
     def poll(cls, context):
         return context.window_manager is not None
 
+    def invoke(self, context, event):
+        if is_xr_running(context):
+            return self.execute(context)
+
+        return context.window_manager.invoke_props_dialog(self, width=430)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text="OpenXR / VR Link is not currently running.", icon='ERROR')
+        layout.separator()
+        layout.label(text="Starting VR without a working OpenXR runtime")
+        layout.label(text="or a fully connected headset can make Blender wait")
+        layout.label(text="during native XR startup.")
+        layout.separator()
+        layout.label(text="Make sure your headset is in Quest Link / Air Link")
+        layout.label(text="and your OpenXR runtime is configured before continuing.")
+        layout.separator()
+        layout.label(text="Continue anyway only if your XR setup is ready.", icon='INFO')
+
     def execute(self, context):
         global _LIVE_RIG_RUNTIME
 
@@ -888,7 +922,7 @@ class RVRETEP_OT_show_all_recordings(bpy.types.Operator):
             return {'CANCELLED'}
 
         for col in sessions:
-            col.hide_viewport = False
+            set_recording_visibility(col, True)
 
         self.report({'INFO'}, f"Showing {len(sessions)} VR session(s).")
         return {'FINISHED'}
@@ -907,7 +941,7 @@ class RVRETEP_OT_hide_old_recordings(bpy.types.Operator):
             return {'CANCELLED'}
 
         for col in get_recording_collections():
-            col.hide_viewport = col.name != active
+            set_recording_visibility(col, col.name == active)
 
         self.report({'INFO'}, "Old VR sessions hidden; active session remains visible.")
         return {'FINISHED'}
@@ -925,7 +959,7 @@ class RVRETEP_OT_show_active_recording(bpy.types.Operator):
             self.report({'WARNING'}, "No active VR session is selected.")
             return {'CANCELLED'}
 
-        col.hide_viewport = False
+        set_recording_visibility(col, True)
 
         for obj in context.selected_objects:
             obj.select_set(False)
@@ -1253,7 +1287,7 @@ class RVRETEP_OT_record_gameplay(bpy.types.Operator):
         # remain visible, exactly matching the user's preferred workflow.
         if context.scene.rvretep_hide_old_sessions:
             for col in get_recording_collections():
-                col.hide_viewport = True
+                set_recording_visibility(col, False)
 
         number = get_next_recording_number()
         collection_name = f"{COLLECTION_PREFIX}{number:03d}"
@@ -1266,7 +1300,7 @@ class RVRETEP_OT_record_gameplay(bpy.types.Operator):
 
         col = bpy.data.collections.new(collection_name)
         master_col.children.link(col)
-        col.hide_viewport = False
+        set_recording_visibility(col, True)
         col.hide_render = True
 
         self.recording_number = number
@@ -1593,7 +1627,7 @@ class RVRETEP_OT_record_gameplay(bpy.types.Operator):
             )
             self.restore_playback_settings(scene)
             scene.rvretep_is_recording = False
-            _RECORDER_ACTIVE = None
+            _RECORDER_ACTIVE = False
 
             if scene.rvretep_live_rig_enabled and _LIVE_RIG_RUNTIME is not None:
                 try:
@@ -1958,9 +1992,10 @@ class RVRETEP_PT_panel(bpy.types.Panel):
         else:
             warning_box = layout.box()
             warning_box.alert = True
-            warning_box.label(text="VR LINK CHECK")
-            warning_box.label(text="Quest Link / Air Link must show Connected.")
-            warning_box.label(text="Do not start while the headset is still connecting.")
+            warning_box.label(text="VR LINK CHECK", icon='ERROR')
+            warning_box.label(text="Headset must be fully connected.")
+            warning_box.label(text="Quest Link / Air Link should show Connected.")
+            warning_box.label(text="OpenXR must be configured before starting.")
             layout.operator(
                 "rvretep.toggle_session",
                 text="Start VR Session",
@@ -2273,6 +2308,14 @@ def register():
         precision=0,
         step=10,
     )
+
+    # Live VR Rig is runtime-only. Explicitly clear any stale value on
+    # existing Scene instances when the extension is enabled/reloaded.
+    for existing_scene in bpy.data.scenes:
+        try:
+            existing_scene.rvretep_live_rig_enabled = False
+        except Exception:
+            pass
 
     bpy.types.Scene.rvretep_live_rig_enabled = bpy.props.BoolProperty(
         name="Live VR Rig Enabled",
