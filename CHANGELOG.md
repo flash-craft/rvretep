@@ -2,6 +2,8 @@
 
 ## 1.2.0-draft - 2026-10-04
 
+- Fixed native XR binding crash by isolating the teleprompter action map from inherited controller profiles. Draft bindings are currently limited to Oculus Touch.
+
 Experimental VR teleprompter feature.
 
 ### Added
