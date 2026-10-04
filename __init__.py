@@ -2316,14 +2316,10 @@ def register():
         step=10,
     )
 
-    # Live VR Rig is runtime-only. Explicitly clear any stale value on
-    # existing Scene instances when the extension is enabled/reloaded.
-    for existing_scene in bpy.data.scenes:
-        try:
-            existing_scene.rvretep_live_rig_enabled = False
-        except Exception:
-            pass
-
+    # Live VR Rig is runtime-only. Do not touch bpy.data.scenes here:
+    # Blender can execute add-on registration under _RestrictData, where
+    # collection/scene data access is intentionally unavailable. The property
+    # defaults to False, and load_post handles stale scene state after startup.
     bpy.types.Scene.rvretep_live_rig_enabled = bpy.props.BoolProperty(
         name="Live VR Rig Enabled",
         description=(
