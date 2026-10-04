@@ -2,6 +2,8 @@
 
 ## 1.2.0-draft - 2026-10-04
 
+- Centered the teleprompter text/status by default, increased default viewing distance to 1.35 m, and increased text emission brightness. Teleprompter controller input now uses a dedicated action set while running so the right stick no longer also drives Blender scene navigation.
+
 - Moved teleprompter XR action creation into Blender's `xr_session_start_pre` lifecycle and reuse the active Blender action map instead of activating a new action set during a running session.
 
 - Fixed native XR binding crash by isolating the teleprompter action map from inherited controller profiles. Draft bindings are currently limited to Oculus Touch.
