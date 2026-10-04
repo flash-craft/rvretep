@@ -1012,7 +1012,7 @@ class RVRETEP_PT_teleprompter:
         )
 
         box.label(text="Right stick: temporary speed override", icon='INFO')
-        box.label(text="Trigger: pause  •  A: next  •  B: previous", icon='CONTROLLER')
+        box.label(text="Trigger: pause  •  A: next  •  B: previous")
 
 
 @persistent
