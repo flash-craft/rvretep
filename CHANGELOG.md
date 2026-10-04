@@ -2,6 +2,8 @@
 
 ## 1.2.0-draft - 2026-10-04
 
+- Moved teleprompter XR action creation into Blender's `xr_session_start_pre` lifecycle and reuse the active Blender action map instead of activating a new action set during a running session.
+
 - Fixed native XR binding crash by isolating the teleprompter action map from inherited controller profiles. Draft bindings are currently limited to Oculus Touch.
 
 Experimental VR teleprompter feature.
