@@ -28,13 +28,13 @@ PANEL_NAME = "RVretep_Teleprompter_Panel"
 STATUS_NAME = "RVretep_Teleprompter_Status"
 LINE_PREFIX = "RVretep_Teleprompter_Line_"
 
-ACTION_MAP_NAME = "RVretep_Teleprompter"
-ACTION_SCROLL = "RVretep_Teleprompter_Scroll"
-ACTION_PAUSE = "RVretep_Teleprompter_Pause"
-ACTION_NEXT = "RVretep_Teleprompter_Next"
-ACTION_PREVIOUS = "RVretep_Teleprompter_Previous"
-ACTION_GRIP = "RVretep_Teleprompter_Grip"
-ACTION_AIM = "RVretep_Teleprompter_Aim"
+ACTION_MAP_NAME = "rvretep_teleprompter"
+ACTION_SCROLL = "rvretep_teleprompter_scroll"
+ACTION_PAUSE = "rvretep_teleprompter_pause"
+ACTION_NEXT = "rvretep_teleprompter_next"
+ACTION_PREVIOUS = "rvretep_teleprompter_previous"
+ACTION_GRIP = "rvretep_teleprompter_grip"
+ACTION_AIM = "rvretep_teleprompter_aim"
 
 RIGHT_HAND = "/user/hand/right"
 LEFT_HAND = "/user/hand/left"
@@ -730,14 +730,12 @@ def _stop_runtime(context, runtime=None, delete_scene_objects=True):
 class RVRETEP_OT_teleprompter_create_script(bpy.types.Operator):
     bl_idname = "rvretep.teleprompter_create_script"
     bl_label = "Create Teleprompter Script"
-    bl_description = "Create a Blender Text datablock for the RVretep teleprompter"
+    bl_description = "Create a new Blender Text datablock for the RVretep teleprompter"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
         name = "RVretep_Teleprompter_Script"
-        text_block = bpy.data.texts.get(name)
-        if text_block is None:
-            text_block = bpy.data.texts.new(name)
+        text_block = bpy.data.texts.new(name)
             text_block.write(
                 "# RVretep Teleprompter\n"
                 "# Paste or type your presenter script below.\n\n"
